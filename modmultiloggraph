@@ -1,0 +1,61 @@
+#!/usr/bin/env Rscript
+
+library(ggplot2)
+library(lubridate)
+library(data.table)
+library(reshape2)
+library(scales)
+library(tools)
+library(zoo)
+
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 1) {
+    stop("Usage: modmultiloggraph <times.csv> <times2.csv> [out.png] [starttime [endtime]]")
+}
+
+
+file1 <- args[1]
+file2 <- args[2]
+outfile <- ifelse(!is.na(args[3]), args[3], "out.png")
+max <- ifelse(!is.na(args[4]), args[4], 0.1)
+starttime <- ifelse(!is.na(args[5]), ymd_hms(args[5]), NA)
+endtime <- ifelse(!is.na(args[5]), ymd_hms(args[6]), NA)
+max <- as.numeric(max)
+
+loadfile <- function(filename, starttime, endtime, windowsize = NA) {
+    dt <- fread(filename, header = F)
+    dt$V1 <- with_tz(ymd_hms(dt$V1))
+    if (!is.na(starttime)) {
+        dt <- subset(dt, V1 > starttime)
+    }
+    if (!is.na(endtime)) {
+        dt <- subset(dt, V1 < endtime)
+    }
+
+    if (!is.na(windowsize)) {
+        x <- rollapply(dt[, -1, with = F], windowsize, mean)
+        a <- dt$V1
+        vec <- as.vector(a[1:nrow(x)])
+
+        dt <- as.data.table(data.frame(V1 = vec, x))
+        dt$V1 <- as.POSIXct(dt$V1, origin = "1970-01-01", tz = "GMT")
+    }
+    melt(dt, id.vars = "V1", variable.name = "series")
+}
+
+df1 <- loadfile(file1, starttime, endtime, 200)
+df2 <- loadfile(file2, starttime, endtime, 1000)
+
+if (file_ext(outfile) == "pdf") {
+    pdf(outfile, width = 11, height = 8)
+} else {
+    png(outfile, width = 1000, height = 640)
+}
+ggplot(df1, aes(V1, value)) +
+    geom_line(aes(colour = series)) +
+    ylab("Query duration (seconds)") +
+    xlab("Date") +
+    geom_line(data = df2, aes(V1, value, color = "GC")) +
+    scale_y_continuous(limits = c(0, max), oob = squish)
+
+dev.off()

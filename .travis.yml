@@ -1,0 +1,6 @@
+language: r
+sudo: false
+install:
+    - Rscript -e 'install.packages("lintr")'
+after_script:
+    - Rscript -e 'lintr::lint("modmultiloggraph")'
